@@ -1,8 +1,6 @@
 node_modules/
 dist/
-data/yodo-fast.db
-data/yodo-fast.db-wal
-data/yodo-fast.db-shm
+data/workspace.json
 log/
 tmpData.json
 AutoBuy/

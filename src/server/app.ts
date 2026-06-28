@@ -173,6 +173,6 @@ export function startServer(port = 3847) {
 
   server.listen(port, () => {
     console.log(`yodo-fast UI: http://localhost:${port}`);
-    console.log(`Database: ${join(root, 'data/yodo-fast.db')}`);
+    console.log(`Config: ${join(root, 'data/workspace.json')}`);
   });
 }
