@@ -64,6 +64,7 @@ export type TaskStatus =
   | 'pending'
   | 'pre-login'
   | 'waiting'
+  | 'running'
   | 'buying'
   | 'success'
   | 'failed'

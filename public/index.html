@@ -204,7 +204,7 @@
 </head>
 <body>
   <div class="titlebar">
-    <span>YodoFast — v1.0.0</span>
+    <span>YodoFast <small>English UI · YodoTool engine</small></span>
     <small id="statusLine">Ready <span id="savedHint" class="saved-hint"></span></small>
   </div>
 
@@ -320,7 +320,7 @@
       ]);
       const ok = tasks.filter((t) => t.status === 'success');
       const fail = tasks.filter((t) => t.status === 'failed');
-      const active = tasks.filter((t) => ['pre-login', 'waiting', 'buying', 'pending'].includes(t.status));
+      const active = tasks.filter((t) => ['running', 'waiting', 'pending'].includes(t.status));
 
       $('successList').value = (summary?.successAccounts || ok.map((t) => t.account.email)).join('\n');
       $('failList').value = (summary?.failAccounts || fail.map((t) => t.account.email)).join('\n');
@@ -340,7 +340,31 @@
       return runningInfo.running;
     }
 
+    async function updateRunButton() {
+      const running = await refreshOutputs();
+      $('runBtn').disabled = running;
+    }
+
+    let logSeen = new Set();
+    let wsConnected = false;
+
+    function appendLog(ev) {
+      const key = `${ev.ts}|${ev.email}|${ev.step || ''}|${ev.message}`;
+      if (logSeen.has(key)) return;
+      logSeen.add(key);
+      if (logSeen.size > 2000) {
+        logSeen = new Set([...logSeen].slice(-1000));
+      }
+      const t = new Date(ev.ts).toLocaleTimeString();
+      const line = `[${t}] ${ev.email}${ev.step ? ' ' + ev.step : ''} ${ev.message}`;
+      logLines.push(line);
+      if (logLines.length > 500) logLines = logLines.slice(-500);
+      logsEl.value = logLines.join('\n');
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
     async function pollLogs() {
+      if (wsConnected) return;
       const events = await fetch('/api/logs?limit=300').then((r) => r.json());
       if (!events.length) return;
       const lastTs = logLines._lastTs || 0;
@@ -348,15 +372,6 @@
         if (ev.ts > lastTs) appendLog(ev);
       }
       if (events.length) logLines._lastTs = events[events.length - 1].ts;
-    }
-
-    function appendLog(ev) {
-      const t = new Date(ev.ts).toLocaleTimeString();
-      const line = `[${t}] ${ev.email}${ev.step ? ' ' + ev.step : ''} ${ev.message}`;
-      logLines.push(line);
-      if (logLines.length > 500) logLines = logLines.slice(-500);
-      logsEl.value = logLines.join('\n');
-      logsEl.scrollTop = logsEl.scrollHeight;
     }
 
     function buildBody() {
@@ -413,24 +428,29 @@
       const scanOn = !!c.flags?.TIME_CHECK_PRODUCT_AVAILABLE;
       document.querySelector(`input[name="scanMode"][value="${scanOn ? 'on' : 'off'}"]`).checked = true;
       if (c.savedAt) showSaved(c.savedAt);
+      if (c.engineOk === false) {
+        appendLog({ ts: Date.now(), email: 'system', level: 'error', message: c.engineError || 'Engine not found — copy YodoTool/AutoBuy folder' });
+      }
     }
 
     $('saveBtn').onclick = () => saveConfig(false);
 
     $('runBtn').onclick = async () => {
+      if ($('runBtn').disabled) return;
       $('runBtn').disabled = true;
       logLines = [];
       logLines._lastTs = 0;
+      logSeen = new Set();
       await saveConfig(true);
       const r = await fetch('/api/run', { method: 'POST' });
       const j = await r.json();
       if (!j.ok) {
         appendLog({ ts: Date.now(), email: 'system', level: 'error', message: j.error || 'Start failed' });
+        $('runBtn').disabled = false;
       } else {
         appendLog({ ts: Date.now(), email: 'system', level: 'info', message: `Started ${j.tasks} account(s) — watch log for progress` });
       }
-      setTimeout(() => { $('runBtn').disabled = false; }, 1500);
-      refreshOutputs();
+      updateRunButton();
     };
 
     $('stopBtn').onclick = async () => {
@@ -440,18 +460,22 @@
 
     function connectWs() {
       const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onopen = () => { wsConnected = true; };
       ws.onmessage = (e) => {
         appendLog(JSON.parse(e.data));
-        refreshOutputs();
+        updateRunButton();
       };
-      ws.onclose = () => setTimeout(connectWs, 2000);
+      ws.onclose = () => {
+        wsConnected = false;
+        setTimeout(connectWs, 2000);
+      };
     }
 
     loadConfig().then(() => pollLogs());
     connectWs();
-    setInterval(async () => {
-      await pollLogs();
-      refreshOutputs();
+    setInterval(() => {
+      pollLogs();
+      updateRunButton();
     }, 1000);
   </script>
 </body>

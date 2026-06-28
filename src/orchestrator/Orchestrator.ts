@@ -1,14 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { BuyWorkflow } from '../workflow/BuyWorkflow.js';
+import { runHandle } from '../engine/HandleRunner.js';
 import { parseProxyList } from '../lib/config.js';
 import { emitLog } from '../lib/logger.js';
 import { reportRunSummary, reportTaskResult } from '../lib/discord.js';
-import {
-  loginStartTime,
-  parseScheduleTime,
-  waitUntil,
-  waitUntilHighPrecision,
-} from '../lib/schedule.js';
+import { loginStartTime, parseScheduleTime, waitUntil } from '../lib/schedule.js';
 import type { RunSummary, TaskConfig, TaskState } from '../types.js';
 
 export class Orchestrator {
@@ -59,15 +54,14 @@ export class Orchestrator {
 
     const states = this.loadConfig(config, proxyText);
     const valid = states.length;
-    emitLog('system', 'system', 'info', `Có ${valid} hàng hợp lệ`);
+    emitLog('system', 'system', 'info', `${valid} valid account(s)`);
 
     const buyTarget = parseScheduleTime(config.scheduleTime);
     if (buyTarget) {
-      emitLog('system', 'system', 'info', `-- Đặt lịch: ${valid}`);
-      emitLog('system', 'system', 'info', `-- Time to run: ${msUntilLabel(buyTarget)}`);
-      emitLog('system', 'system', 'info', `-- Start run at: ${config.scheduleTime}, delay: 0 ms`);
+      emitLog('system', 'system', 'info', `Scheduled run: ${valid} account(s)`);
+      emitLog('system', 'system', 'info', `Buy time: ${config.scheduleTime}`);
     } else {
-      emitLog('system', 'system', 'info', `-- Start run now: ${valid}`);
+      emitLog('system', 'system', 'info', `Run now: ${valid} account(s)`);
     }
 
     const limit = Math.min(config.maxParallel, config.settings.maxTab, valid);
@@ -97,13 +91,8 @@ export class Orchestrator {
     this.lastSummary = summary;
 
     this.running = false;
-    emitLog('system', 'system', 'info', `-- End run now: ${valid}`);
-    emitLog(
-      'system',
-      'system',
-      'info',
-      `success:${summary.success} failed:${summary.failed}`,
-    );
+    emitLog('system', 'system', 'info', `Finished: ${valid} account(s)`);
+    emitLog('system', 'system', 'info', `success:${summary.success} failed:${summary.failed}`);
 
     await reportRunSummary(config.discordWebhookUrl, summary);
     return summary;
@@ -115,86 +104,64 @@ export class Orchestrator {
     buyTarget: Date | null,
     signal: AbortSignal,
   ): Promise<void> {
-    const { account, productId, amount, proxy } = task;
+    const { account, amount, proxy } = task;
     const proxyLabel = proxy
       ? `${proxy.host}:${proxy.port}:${proxy.username ?? ''}:${proxy.password ?? ''}`
       : 'noproxy';
     const timeLabel = buyTarget ? task.scheduleTime : 'rn';
+
     emitLog(
       task.id,
       account.email,
       'info',
-      `Account info: ${account.email} ${account.password} ${account.cardNumber} ${account.cardMonth} ${account.cardYear} ${account.cvv}, Proxy: ${proxyLabel}, Time: ${timeLabel}, Amount: ${amount}`,
+      `Account: ${account.email}, Proxy: ${proxyLabel}, Time: ${timeLabel}, Amount: ${amount}`,
     );
 
     task.status = 'pending';
     task.startedAt = Date.now();
 
-    const wf = new BuyWorkflow({
-      taskId: task.id,
-      account,
-      productId,
-      amount,
-      proxy,
-      flags: config.flags,
-      saveCard: config.saveCard,
-      fingerprint: config.fingerprint,
-      signal,
-      onStep: (step) => {
-        task.currentStep = step;
-      },
-    });
-
     try {
-      // nudTimeLoginBefore: wait until login window if scheduled
       if (buyTarget && config.loginBeforeMinutes > 0) {
-        const loginAt = loginStartTime(buyTarget, config.loginBeforeMinutes);
-        if (Date.now() < loginAt.getTime()) {
+        const spawnAt = loginStartTime(buyTarget, config.loginBeforeMinutes);
+        if (Date.now() < spawnAt.getTime()) {
           task.status = 'waiting';
-          emitLog(task.id, account.email, 'info', `wait login until ${fmt(loginAt)}`);
-          await waitUntil(loginAt, signal);
+          emitLog(task.id, account.email, 'info', `Wait until ${fmt(spawnAt)} to start engine`);
+          await waitUntil(spawnAt, signal);
         }
       }
 
-      task.status = 'pre-login';
-      const loginStart = Date.now();
-      const loggedIn = await wf.runLoginPhase();
-      task.loginAt = Date.now();
-      task.loginMs = task.loginAt - loginStart;
+      task.status = 'running';
+      const t0 = Date.now();
 
-      if (!loggedIn) {
-        task.status = 'failed';
-        task.success = false;
-        task.finishedAt = Date.now();
-        task.totalMs = task.finishedAt - task.startedAt!;
-        return;
-      }
+      const result = await runHandle({
+        taskId: task.id,
+        account,
+        config,
+        proxy,
+        scheduleTime: timeLabel,
+        signal,
+        onStep: (step) => {
+          task.currentStep = step;
+        },
+      });
 
-      if (buyTarget) {
-        task.status = 'waiting';
-        await waitUntilHighPrecision(buyTarget, signal);
-      }
-
-      task.status = 'buying';
-      const buyStart = Date.now();
-      task.buyAt = buyStart;
-      const success = await wf.runBuyPhase();
-      task.buyMs = Date.now() - buyStart;
-      task.status = success ? 'success' : 'failed';
-      task.success = success;
+      task.totalMs = Date.now() - t0;
+      task.success = result.ok;
+      task.status = result.ok ? 'success' : 'failed';
+      if (!result.ok) task.message = result.error;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === 'Stopped') {
         task.status = 'stopped';
       } else {
-        emitLog(task.id, account.email, 'error', `error run ${account.email}: ${msg}`);
+        emitLog(task.id, account.email, 'error', `error: ${msg}`);
         task.status = 'failed';
         task.success = false;
         task.message = msg;
       }
     } finally {
       task.finishedAt = Date.now();
-      if (task.startedAt) task.totalMs = task.finishedAt - task.startedAt;
+      if (task.startedAt && !task.totalMs) task.totalMs = task.finishedAt - task.startedAt;
       if (task.status !== 'stopped' && task.success) {
         await reportTaskResult(config.discordWebhookUrl, task);
       }
@@ -206,11 +173,6 @@ export class Orchestrator {
     this.running = false;
     emitLog('system', 'system', 'info', 'Stop requested');
   }
-}
-
-function msUntilLabel(target: Date): string {
-  const ms = Math.max(0, target.getTime() - Date.now());
-  return `${ms} ms`;
 }
 
 function fmt(d: Date): string {

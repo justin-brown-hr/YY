@@ -4,3 +4,5 @@ data/yodo-fast.db
 data/yodo-fast.db-wal
 data/yodo-fast.db-shm
 log/
+tmpData.json
+AutoBuy/

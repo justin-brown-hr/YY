@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { orchestrator } from '../orchestrator/Orchestrator.js';
+import { checkEngine } from '../engine/HandleRunner.js';
 import { loadWorkspace, saveWorkspace, getUpdatedAt } from '../db/store.js';
 import {
   extractProductId,
@@ -75,11 +76,15 @@ export function createApp() {
 
   app.get('/api/config', (_req, res) => {
     const { config, accountsText, proxyText } = loadWorkspace();
+    const engine = checkEngine();
     res.json({
       ...config,
       accountLines: accountsText,
       proxyText,
       savedAt: getUpdatedAt(),
+      engineOk: engine.ok,
+      enginePath: engine.path,
+      engineError: engine.error,
     });
   });
 
@@ -99,6 +104,11 @@ export function createApp() {
       return;
     }
     const { config, proxyText } = loadWorkspace();
+    const engine = checkEngine();
+    if (!engine.ok) {
+      res.status(400).json({ error: engine.error ?? 'YodoTool AutoBuy engine not found' });
+      return;
+    }
     if (!config.productId || config.accounts.length === 0) {
       res.status(400).json({ error: 'productId and accounts required' });
       return;

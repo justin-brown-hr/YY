@@ -164,7 +164,12 @@ export class BuyWorkflow {
 
     this.onStep?.('browserLogin');
     this.log('browser', 'Starting browser login (Akamai bypass)...', 'info');
-    const browserResult = await browserLogin(this.session, this.ctx.account, this.session.proxy);
+    const browserResult = await browserLogin({
+      session: this.session,
+      account: this.ctx.account,
+      proxy: this.session.proxy,
+      taskId: this.ctx.taskId,
+    });
     if (browserResult.ok) {
       this.ctx.loggedIn = true;
       await this.runStep('getAccessToken', () => this.getAccessToken());
