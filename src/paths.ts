@@ -19,7 +19,8 @@ export function resolveAutoBuyDir(): string {
 }
 
 export function tmpDataPath(): string {
-  return join(projectRoot, 'tmpData.json');
+  // YodoTool reads ../tmpData.json from AutoBuy cwd
+  return join(resolveAutoBuyDir(), '..', 'tmpData.json');
 }
 
 export function handleJscPath(autoBuyDir: string): string {

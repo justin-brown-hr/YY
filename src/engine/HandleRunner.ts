@@ -3,7 +3,7 @@ import { writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { emitLog } from '../lib/logger.js';
 import { toLegacyTmpData } from '../lib/config.js';
-import { handleJscPath, resolveAutoBuyDir, tmpDataPath } from '../paths.js';
+import { resolveAutoBuyDir, tmpDataPath } from '../paths.js';
 import type { Account, ProxyConfig, TaskConfig } from '../types.js';
 
 /** Serialize tmpData writes — handle.jsc reads ../tmpData.json from AutoBuy cwd */
@@ -69,7 +69,6 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
   const { taskId, account, config, proxy, scheduleTime, signal, onStep } = opts;
   const email = account.email;
   const autoBuyDir = resolveAutoBuyDir();
-  const jsc = handleJscPath(autoBuyDir);
 
   const line = accountLine(account);
   const proxyStr = proxyLabel(proxy);
@@ -83,9 +82,10 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
   };
 
   return withTmpDataLock(async () => {
-    writeFileSync(tmpDataPath(), JSON.stringify(toLegacyTmpData(taskConfig), null, 2), 'utf8');
-
-    emitLog(taskId, email, 'info', `engine → handle.jsc (${proxyStr})`, 'engine');
+    const tmpPath = tmpDataPath();
+    writeFileSync(tmpPath, JSON.stringify(toLegacyTmpData(taskConfig), null, 2), 'utf8');
+    emitLog(taskId, email, 'info', `tmpData → ${tmpPath}`, 'engine');
+    emitLog(taskId, email, 'info', `engine → run.bat (${proxyStr})`, 'engine');
 
     return new Promise<HandleRunResult>((resolve) => {
       if (signal?.aborted) {
@@ -93,15 +93,17 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
         return;
       }
 
-      const child = spawn(
-        process.platform === 'win32' ? 'node.exe' : 'node',
-        ['-r', 'bytenode', jsc, line, proxyStr, timeStr, String(config.amount), config.productId],
-        {
-          cwd: autoBuyDir,
-          env: process.env,
-          windowsHide: true,
-        },
-      );
+      const isWin = process.platform === 'win32';
+      const child = isWin
+        ? spawn('cmd.exe', ['/c', 'run.bat', line, proxyStr, timeStr, String(config.amount)], {
+            cwd: autoBuyDir,
+            env: process.env,
+            windowsHide: true,
+          })
+        : spawn('node', ['-r', 'bytenode', './handle.jsc'], {
+            cwd: autoBuyDir,
+            env: process.env,
+          });
 
       let stdout = '';
       let stderr = '';
@@ -150,8 +152,10 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
           return;
         }
         const errMsg =
-          stderr.trim() ||
-          (code !== 0 ? `handle.jsc exited ${code}` : 'No success signal from handle.jsc');
+          stderr.includes('cachedDataRejected')
+            ? 'Node version mismatch — install Node 20.x (same as YodoTool)'
+            : stderr.trim() ||
+              (code !== 0 ? `handle.jsc exited ${code}` : 'No success signal from handle.jsc');
         resolve({ ok: false, error: errMsg });
       });
     });
