@@ -1,7 +1,9 @@
 {
   "name": "yodo-fast",
   "version": "1.0.0",
-  "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",

@@ -364,7 +364,6 @@
     }
 
     async function pollLogs() {
-      if (wsConnected) return;
       const events = await fetch('/api/logs?limit=300').then((r) => r.json());
       if (!events.length) return;
       const lastTs = logLines._lastTs || 0;
@@ -438,19 +437,28 @@
     $('runBtn').onclick = async () => {
       if ($('runBtn').disabled) return;
       $('runBtn').disabled = true;
-      logLines = [];
-      logLines._lastTs = 0;
-      logSeen = new Set();
-      await saveConfig(true);
-      const r = await fetch('/api/run', { method: 'POST' });
-      const j = await r.json();
-      if (!j.ok) {
-        appendLog({ ts: Date.now(), email: 'system', level: 'error', message: j.error || 'Start failed' });
+      try {
+        logLines = [];
+        logLines._lastTs = 0;
+        logSeen = new Set();
+        await saveConfig(true);
+        const r = await fetch('/api/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildBody()),
+        });
+        const j = await r.json();
+        if (!j.ok) {
+          appendLog({ ts: Date.now(), email: 'system', level: 'error', message: j.error || 'Start failed' });
+        } else {
+          appendLog({ ts: Date.now(), email: 'system', level: 'info', message: `Started ${j.tasks} account(s)` });
+        }
+      } catch (e) {
+        appendLog({ ts: Date.now(), email: 'system', level: 'error', message: String(e) });
+      } finally {
         $('runBtn').disabled = false;
-      } else {
-        appendLog({ ts: Date.now(), email: 'system', level: 'info', message: `Started ${j.tasks} account(s) — watch log for progress` });
+        updateRunButton();
       }
-      updateRunButton();
     };
 
     $('stopBtn').onclick = async () => {

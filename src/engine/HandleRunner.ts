@@ -6,7 +6,6 @@ import { toLegacyTmpData } from '../lib/config.js';
 import { resolveAutoBuyDir, tmpDataPath } from '../paths.js';
 import type { Account, ProxyConfig, TaskConfig } from '../types.js';
 
-/** Serialize tmpData writes — handle.jsc reads ../tmpData.json from AutoBuy cwd */
 let tmpDataLock: Promise<void> = Promise.resolve();
 
 function withTmpDataLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -42,34 +41,22 @@ export interface HandleRunResult {
   error?: string;
 }
 
-/** Parse handle.jsc stdout — same lines as YodoAutoApp logs */
-function parseLine(
-  line: string,
-  email: string,
-  onStep?: (step: string) => void,
-): boolean | undefined {
+function parseLine(line: string, onStep?: (step: string) => void): boolean | undefined {
   const t = line.trim();
   if (!t) return undefined;
-
   if (t.includes('login success')) onStep?.('login');
   if (t.includes('start buy')) onStep?.('buying');
   if (t.includes('callApiAddCart')) onStep?.('callApiAddCart');
   if (t.includes('buy success') && t.includes('true')) return true;
   if (t.includes('success:false') || (t.includes('buy success') && t.includes('false'))) return false;
   if (t.includes('login fail')) return false;
-
   return undefined;
 }
 
-/**
- * Run one account through original YodoTool handle.jsc (unchanged buy workflow).
- * Writes tmpData.json then spawns: node -r bytenode handle.jsc
- */
 export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult> {
   const { taskId, account, config, proxy, scheduleTime, signal, onStep } = opts;
   const email = account.email;
   const autoBuyDir = resolveAutoBuyDir();
-
   const line = accountLine(account);
   const proxyStr = proxyLabel(proxy);
   const timeStr = scheduleTime || 'rn';
@@ -85,7 +72,17 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
     const tmpPath = tmpDataPath();
     writeFileSync(tmpPath, JSON.stringify(toLegacyTmpData(taskConfig), null, 2), 'utf8');
     emitLog(taskId, email, 'info', `tmpData → ${tmpPath}`, 'engine');
-    emitLog(taskId, email, 'info', `engine → run.bat (${proxyStr})`, 'engine');
+
+    const nodeArgs = [
+      '-r',
+      'bytenode',
+      join(autoBuyDir, 'handle.jsc'),
+      line,
+      proxyStr,
+      timeStr,
+      String(config.amount),
+    ];
+    emitLog(taskId, email, 'info', `node handle.jsc (${proxyStr})`, 'engine');
 
     return new Promise<HandleRunResult>((resolve) => {
       if (signal?.aborted) {
@@ -93,39 +90,34 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
         return;
       }
 
-      const isWin = process.platform === 'win32';
-      const child = isWin
-        ? spawn('cmd.exe', ['/c', 'run.bat', line, proxyStr, timeStr, String(config.amount)], {
-            cwd: autoBuyDir,
-            env: process.env,
-            windowsHide: true,
-          })
-        : spawn('node', ['-r', 'bytenode', './handle.jsc'], {
-            cwd: autoBuyDir,
-            env: process.env,
-          });
+      const child = spawn(process.execPath, nodeArgs, {
+        cwd: autoBuyDir,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
 
       let stdout = '';
       let stderr = '';
       let result: boolean | undefined;
 
       const abort = () => {
-        child.kill('SIGTERM');
+        child.kill();
         resolve({ ok: false, error: 'Stopped' });
       };
       signal?.addEventListener('abort', abort, { once: true });
 
-      child.stdout.on('data', (buf: Buffer) => {
+      child.stdout?.on('data', (buf: Buffer) => {
         const text = buf.toString();
         stdout += text;
         for (const raw of text.split(/\r?\n/)) {
-          const parsed = parseLine(raw, email, onStep);
+          const parsed = parseLine(raw, onStep);
           if (parsed !== undefined) result = parsed;
           if (raw.trim()) emitLog(taskId, email, 'info', raw.trim());
         }
       });
 
-      child.stderr.on('data', (buf: Buffer) => {
+      child.stderr?.on('data', (buf: Buffer) => {
         stderr += buf.toString();
         for (const raw of buf.toString().split(/\r?\n/)) {
           if (raw.trim()) emitLog(taskId, email, 'error', raw.trim());
@@ -134,12 +126,13 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
 
       child.on('error', (err) => {
         signal?.removeEventListener('abort', abort);
+        emitLog(taskId, email, 'error', `spawn failed: ${err.message}`);
         resolve({ ok: false, error: err.message });
       });
 
       child.on('close', (code) => {
         signal?.removeEventListener('abort', abort);
-        if (result === true) {
+        if (result === true || (stdout.includes('buy success') && stdout.includes('true'))) {
           resolve({ ok: true });
           return;
         }
@@ -147,15 +140,9 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
           resolve({ ok: false, error: 'handle.jsc reported failure' });
           return;
         }
-        if (stdout.includes('buy success') && stdout.includes('true')) {
-          resolve({ ok: true });
-          return;
-        }
-        const errMsg =
-          stderr.includes('cachedDataRejected')
-            ? 'Node version mismatch — install Node 20.x (same as YodoTool)'
-            : stderr.trim() ||
-              (code !== 0 ? `handle.jsc exited ${code}` : 'No success signal from handle.jsc');
+        const errMsg = stderr.includes('cachedDataRejected')
+          ? 'Wrong Node version — use Node 20.x'
+          : stderr.trim() || (code !== 0 ? `exited ${code}` : 'No output from handle.jsc');
         resolve({ ok: false, error: errMsg });
       });
     });
@@ -163,21 +150,25 @@ export async function runHandle(opts: HandleRunOptions): Promise<HandleRunResult
 }
 
 export function checkEngine(): { ok: boolean; path: string; error?: string } {
-  if (process.platform !== 'win32') {
-    return {
-      ok: false,
-      path: resolveAutoBuyDir(),
-      error: 'handle.jsc only runs on Windows (use YodoTool on Windows, not Linux)',
-    };
-  }
   const dir = resolveAutoBuyDir();
   const jsc = join(dir, 'handle.jsc');
+  const bytenode = join(dir, 'node_modules', 'bytenode');
   if (!existsSync(jsc)) {
     return {
       ok: false,
       path: dir,
-      error: 'Copy AutoBuy/ from YodoTool into yodo-fast/AutoBuy (need handle.jsc + node_modules)',
+      error: 'Missing AutoBuy/handle.jsc — copy from YodoTool',
     };
+  }
+  if (!existsSync(bytenode)) {
+    return {
+      ok: false,
+      path: dir,
+      error: 'Missing AutoBuy/node_modules — run: cd AutoBuy && npm install',
+    };
+  }
+  if (process.platform !== 'win32') {
+    return { ok: false, path: dir, error: 'Must run on Windows' };
   }
   return { ok: true, path: dir };
 }

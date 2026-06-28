@@ -14,7 +14,7 @@ import {
   DEFAULT_SETTINGS,
   defaultConfig,
 } from '../lib/config.js';
-import { onLog, getRecentLogs } from '../lib/logger.js';
+import { onLog, getRecentLogs, emitLog } from '../lib/logger.js';
 import type { TaskConfig } from '../types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -98,19 +98,21 @@ export function createApp() {
     });
   });
 
-  app.post('/api/run', async (_req, res) => {
+  app.post('/api/run', async (req, res) => {
     if (orchestrator.isRunning()) {
       res.status(409).json({ error: 'Already running' });
       return;
     }
-    const { config, proxyText } = loadWorkspace();
+    const { config, accountsText, proxyText } = bodyToConfig(req.body ?? {});
+    saveWorkspace({ config, accountsText, proxyText });
+
     const engine = checkEngine();
     if (!engine.ok) {
       res.status(400).json({ error: engine.error ?? 'YodoTool AutoBuy engine not found' });
       return;
     }
     if (!config.productId || config.accounts.length === 0) {
-      res.status(400).json({ error: 'productId and accounts required' });
+      res.status(400).json({ error: 'Product and at least 1 valid account required' });
       return;
     }
     if (!config.settings.allowPaymentShop) {
@@ -118,7 +120,10 @@ export function createApp() {
       return;
     }
     res.json({ ok: true, tasks: config.accounts.length });
-    orchestrator.start(config, proxyText).catch((e) => console.error(e));
+    orchestrator.start(config, proxyText).catch((e) => {
+      console.error(e);
+      emitLog('system', 'system', 'error', e instanceof Error ? e.message : String(e));
+    });
   });
 
   app.post('/api/stop', (_req, res) => {

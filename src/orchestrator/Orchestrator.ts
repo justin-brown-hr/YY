@@ -52,50 +52,68 @@ export class Orchestrator {
     const signal = this.abort.signal;
     const runStartedAt = Date.now();
 
-    const states = this.loadConfig(config, proxyText);
-    const valid = states.length;
-    emitLog('system', 'system', 'info', `${valid} valid account(s)`);
-
-    const buyTarget = parseScheduleTime(config.scheduleTime);
-    if (buyTarget) {
-      emitLog('system', 'system', 'info', `Scheduled run: ${valid} account(s)`);
-      emitLog('system', 'system', 'info', `Buy time: ${config.scheduleTime}`);
-    } else {
-      emitLog('system', 'system', 'info', `Run now: ${valid} account(s)`);
-    }
-
-    const limit = Math.min(config.maxParallel, config.settings.maxTab, valid);
-    const queue = [...states];
-    const workers = Array.from({ length: limit }, async () => {
-      while (queue.length > 0) {
-        if (signal.aborted) break;
-        const task = queue.shift();
-        if (!task) break;
-        await this.runTask(task, config, buyTarget, signal);
+    try {
+      const states = this.loadConfig(config, proxyText);
+      const valid = states.length;
+      if (valid === 0) {
+        emitLog('system', 'system', 'error', 'No valid accounts — format: email password card month year cvv');
+        return {
+          total: 0,
+          success: 0,
+          failed: 0,
+          successAccounts: [],
+          failAccounts: [],
+          startedAt: runStartedAt,
+          finishedAt: Date.now(),
+          productId: config.productId,
+          scheduleTime: config.scheduleTime,
+        };
       }
-    });
-    await Promise.all(workers);
 
-    const all = [...this.tasks.values()];
-    const summary: RunSummary = {
-      total: valid,
-      success: all.filter((t) => t.success).length,
-      failed: all.filter((t) => !t.success).length,
-      successAccounts: all.filter((t) => t.success).map((t) => t.account.email),
-      failAccounts: all.filter((t) => !t.success).map((t) => t.account.email),
-      startedAt: runStartedAt,
-      finishedAt: Date.now(),
-      productId: config.productId,
-      scheduleTime: config.scheduleTime,
-    };
-    this.lastSummary = summary;
+      emitLog('system', 'system', 'info', `${valid} valid account(s)`);
 
-    this.running = false;
-    emitLog('system', 'system', 'info', `Finished: ${valid} account(s)`);
-    emitLog('system', 'system', 'info', `success:${summary.success} failed:${summary.failed}`);
+      const buyTarget = parseScheduleTime(config.scheduleTime);
+      if (buyTarget) {
+        emitLog('system', 'system', 'info', `Scheduled run: ${valid} account(s)`);
+        emitLog('system', 'system', 'info', `Buy time: ${config.scheduleTime}`);
+      } else {
+        emitLog('system', 'system', 'info', `Run now: ${valid} account(s)`);
+      }
 
-    await reportRunSummary(config.discordWebhookUrl, summary);
-    return summary;
+      const limit = Math.min(config.maxParallel, config.settings.maxTab, valid);
+      const queue = [...states];
+      const workers = Array.from({ length: limit }, async () => {
+        while (queue.length > 0) {
+          if (signal.aborted) break;
+          const task = queue.shift();
+          if (!task) break;
+          await this.runTask(task, config, buyTarget, signal);
+        }
+      });
+      await Promise.all(workers);
+
+      const all = [...this.tasks.values()];
+      const summary: RunSummary = {
+        total: valid,
+        success: all.filter((t) => t.success).length,
+        failed: all.filter((t) => !t.success).length,
+        successAccounts: all.filter((t) => t.success).map((t) => t.account.email),
+        failAccounts: all.filter((t) => !t.success).map((t) => t.account.email),
+        startedAt: runStartedAt,
+        finishedAt: Date.now(),
+        productId: config.productId,
+        scheduleTime: config.scheduleTime,
+      };
+      this.lastSummary = summary;
+
+      emitLog('system', 'system', 'info', `Finished: ${valid} account(s)`);
+      emitLog('system', 'system', 'info', `success:${summary.success} failed:${summary.failed}`);
+
+      await reportRunSummary(config.discordWebhookUrl, summary);
+      return summary;
+    } finally {
+      this.running = false;
+    }
   }
 
   private async runTask(
