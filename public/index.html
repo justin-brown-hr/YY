@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YodoFast</title>
+  <style>
+    :root {
+      --bg: #f4f6fa;
+      --surface: #ffffff;
+      --border: #d8dee9;
+      --border-dark: #c5cdd8;
+      --text: #1a2233;
+      --muted: #5c6b82;
+      --hint: #c0392b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --ok: #16a34a;
+      --err: #dc2626;
+      --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* title bar */
+    .titlebar {
+      background: linear-gradient(180deg, #2b3448 0%, #1f2738 100%);
+      color: #e8edf5;
+      padding: 10px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: 0.01em;
+      border-bottom: 1px solid #151b28;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .titlebar small { font-weight: 400; opacity: 0.75; font-size: 12px; }
+
+    /* main */
+    .main { flex: 1; display: flex; flex-direction: column; padding: 12px; gap: 10px; min-height: 0; }
+
+    /* top row: accounts + scan */
+    .top-row { display: grid; grid-template-columns: 1fr 200px; gap: 10px; min-height: 0; flex: 1.2; }
+    .box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .box-label {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      background: #f8fafc;
+      border-radius: 8px 8px 0 0;
+    }
+    .hint { color: var(--hint); font-size: 11px; line-height: 1.4; }
+    textarea, input[type="text"], input[type="time"], input[type="number"] {
+      border: none;
+      outline: none;
+      font: inherit;
+      color: var(--text);
+      background: transparent;
+      width: 100%;
+    }
+    textarea {
+      flex: 1;
+      resize: none;
+      padding: 10px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      min-height: 120px;
+    }
+    .accounts-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .accounts-wrap textarea { flex: 1; }
+
+    /* scan panel */
+    .scan-panel { padding: 12px; }
+    .scan-title {
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 12px;
+      color: var(--text);
+      text-align: center;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .radio-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .radio-row input { accent-color: var(--accent); }
+
+    /* proxy */
+    .proxy-row { flex: 0.5; min-height: 90px; }
+    .proxy-row textarea { min-height: 70px; }
+
+    /* three output boxes */
+    .outputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      flex: 1;
+      min-height: 140px;
+    }
+    .output-box textarea {
+      min-height: 100px;
+      color: var(--text);
+    }
+    .output-box.success textarea { color: #166534; }
+    .output-box.fail textarea { color: #991b1b; }
+
+    /* footer */
+    .footer {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 1.4fr 80px 110px 130px 1fr auto auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+    .field label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      white-space: nowrap;
+    }
+    .field input {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+    .support {
+      font-size: 11px;
+      color: var(--err);
+      line-height: 1.35;
+      align-self: center;
+    }
+    .btn {
+      border: none;
+      border-radius: 6px;
+      padding: 8px 20px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-start {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-start:hover { background: var(--accent-hover); }
+    .btn-stop {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    .btn-save { background: #e8edf5; color: #1a2233; border: 1px solid var(--border); }
+    .btn-save:hover { background: #dde4ef; }
+    .saved-hint { font-size: 11px; color: var(--ok); margin-left: 8px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* live log styling inside first output */
+    #logs { font-size: 11px; }
+    .log-step { color: #1d4ed8; }
+    .log-success { color: var(--ok); }
+    .log-error { color: var(--err); }
+    .log-info { color: var(--muted); }
+
+    @media (max-width: 1100px) {
+      .top-row { grid-template-columns: 1fr; }
+      .outputs { grid-template-columns: 1fr; }
+      .footer { grid-template-columns: 1fr 1fr; }
+      body { overflow: auto; height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <span>YodoFast — v1.0.0</span>
+    <small id="statusLine">Ready <span id="savedHint" class="saved-hint"></span></small>
+  </div>
+
+  <div class="main">
+    <!-- accounts + scan -->
+    <div class="top-row">
+      <div class="box accounts-wrap">
+        <div class="box-label">
+          <span class="hint">One account per line, fields separated by spaces:</span>
+          <span class="hint"> {email} {password} {card} {month} {year} {cvv}</span>
+        </div>
+        <textarea id="accounts" spellcheck="false" placeholder="user@email.com password 4111111111111111 06 2031 000"></textarea>
+      </div>
+
+      <div class="box">
+        <div class="scan-panel">
+          <div class="scan-title">Product scan</div>
+          <label class="radio-row">
+            <input type="radio" name="scanMode" value="off" checked />
+            Don't scan
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="scanMode" value="on" />
+            Run scan
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- proxy list -->
+    <div class="box proxy-row">
+      <div class="box-label">Proxy list <span style="color:var(--muted)">(first line used for row 1)</span></div>
+      <textarea id="proxyRaw" spellcheck="false" placeholder="ip:port:user:pass"></textarea>
+    </div>
+
+    <!-- outputs -->
+    <div class="outputs">
+      <div class="box output-box">
+        <div class="box-label">Log</div>
+        <textarea id="logs" readonly></textarea>
+      </div>
+      <div class="box output-box success">
+        <div class="box-label">Successful runs</div>
+        <textarea id="successList" readonly></textarea>
+      </div>
+      <div class="box output-box fail">
+        <div class="box-label">Failed runs</div>
+        <textarea id="failList" readonly></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- footer -->
+  <div class="footer">
+    <div class="field">
+      <label>Product ID</label>
+      <input id="productLink" type="text" placeholder="100000001001391544" />
+    </div>
+    <div class="field">
+      <label>Qty</label>
+      <input id="amount" type="number" value="1" min="1" />
+    </div>
+    <div class="field">
+      <label>Login before (min)</label>
+      <input id="loginBefore" type="number" value="2" min="0" />
+    </div>
+    <div class="field">
+      <label>Run time (HH:MM:SS or rn)</label>
+      <input id="schedule" type="text" value="rn" placeholder="18:51:26" />
+    </div>
+    <div class="field">
+      <label>Discord webhook</label>
+      <input id="discordWebhook" type="text" placeholder="https://discord.com/api/webhooks/..." />
+    </div>
+    <div class="support">Contact support if you need help</div>
+    <button class="btn btn-save" id="saveBtn">Save</button>
+    <button class="btn btn-start" id="runBtn">Start</button>
+    <button class="btn btn-stop" id="stopBtn">Stop</button>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logsEl = $('logs');
+    let logLines = [];
+    let saveTimer = null;
+
+    function showSaved(at) {
+      const el = $('savedHint');
+      if (!at) { el.textContent = ''; return; }
+      const d = new Date(at.includes('T') ? at : at.replace(' ', 'T') + 'Z');
+      el.textContent = '· saved ' + (isNaN(d.getTime()) ? at : d.toLocaleTimeString());
+      setTimeout(() => { if (el.textContent.includes('saved')) el.textContent = ''; }, 4000);
+    }
+
+    function scheduleAutoSave() {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveConfig(true), 800);
+    }
+
+    ['accounts', 'proxyRaw', 'productLink', 'schedule', 'loginBefore', 'amount', 'discordWebhook'].forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener('input', scheduleAutoSave);
+    });
+    document.querySelectorAll('input[name="scanMode"]').forEach((el) => {
+      el.addEventListener('change', scheduleAutoSave);
+    });
+
+    async function refreshOutputs() {
+      const [tasks, summary, runningInfo] = await Promise.all([
+        fetch('/api/tasks').then((r) => r.json()),
+        fetch('/api/summary').then((r) => r.json()),
+        fetch('/api/running').then((r) => r.json()),
+      ]);
+      const ok = tasks.filter((t) => t.status === 'success');
+      const fail = tasks.filter((t) => t.status === 'failed');
+      const active = tasks.filter((t) => ['pre-login', 'waiting', 'buying', 'pending'].includes(t.status));
+
+      $('successList').value = (summary?.successAccounts || ok.map((t) => t.account.email)).join('\n');
+      $('failList').value = (summary?.failAccounts || fail.map((t) => t.account.email)).join('\n');
+
+      const savedEl = $('savedHint');
+      const savedText = savedEl?.textContent || '';
+
+      if (runningInfo.running && active.length) {
+        const steps = active.map((t) => t.currentStep || t.status).filter(Boolean);
+        const stepHint = steps.length ? ` — ${steps[0]}` : '';
+        $('statusLine').innerHTML = `Running: ${active.length} task(s)${stepHint} <span id="savedHint" class="saved-hint">${savedText}</span>`;
+      } else if (summary && summary.finishedAt > summary.startedAt) {
+        $('statusLine').innerHTML = `Done — ${summary.success} ok / ${summary.failed} fail <span id="savedHint" class="saved-hint">${savedText}</span>`;
+      } else {
+        $('statusLine').innerHTML = `Ready <span id="savedHint" class="saved-hint">${savedText}</span>`;
+      }
+      return runningInfo.running;
+    }
+
+    async function pollLogs() {
+      const events = await fetch('/api/logs?limit=300').then((r) => r.json());
+      if (!events.length) return;
+      const lastTs = logLines._lastTs || 0;
+      for (const ev of events) {
+        if (ev.ts > lastTs) appendLog(ev);
+      }
+      if (events.length) logLines._lastTs = events[events.length - 1].ts;
+    }
+
+    function appendLog(ev) {
+      const t = new Date(ev.ts).toLocaleTimeString();
+      const line = `[${t}] ${ev.email}${ev.step ? ' ' + ev.step : ''} ${ev.message}`;
+      logLines.push(line);
+      if (logLines.length > 500) logLines = logLines.slice(-500);
+      logsEl.value = logLines.join('\n');
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    function buildBody() {
+      const scanOn = document.querySelector('input[name="scanMode"]:checked').value === 'on';
+      return {
+        productLink: $('productLink').value.trim(),
+        accountLines: $('accounts').value,
+        proxyRaw: $('proxyRaw').value.trim(),
+        scheduleTime: $('schedule').value.trim() || 'rn',
+        loginBeforeMinutes: Number($('loginBefore').value) || 2,
+        amount: Number($('amount').value) || 1,
+        maxParallel: 100,
+        discordWebhookUrl: $('discordWebhook').value.trim(),
+        saveCard: true,
+        flags: {
+          USE_OLD_CARD: false,
+          HAVE_SAVE_CARD: true,
+          NOT_ONLY_USE_PROXY_CONFIRM: false,
+          IS_RUN_SLOW: false,
+          TIME_CHECK_PRODUCT_AVAILABLE: scanOn,
+          TIME_WAIT: 0,
+        },
+        settings: { maxTab: 100, allowPaymentShop: true },
+      };
+    }
+
+    async function saveConfig(quiet = false) {
+      const r = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildBody()),
+      });
+      const j = await r.json();
+      if (j.savedAt) showSaved(j.savedAt);
+      if (!quiet) {
+        appendLog({ ts: Date.now(), email: 'system', level: 'info', message: `Saved ${j.validRows ?? 0} account(s) to database` });
+      }
+      return j;
+    }
+
+    async function loadConfig() {
+      const c = await fetch('/api/config').then((r) => r.json());
+      $('productLink').value = c.productLink || c.productId || '';
+      $('schedule').value = c.scheduleTime || 'rn';
+      $('loginBefore').value = c.loginBeforeMinutes ?? 2;
+      $('amount').value = c.amount ?? 1;
+      $('discordWebhook').value = c.discordWebhookUrl || '';
+      $('proxyRaw').value = c.proxyText ?? (c.proxy
+        ? `${c.proxy.host}:${c.proxy.port}:${c.proxy.username || ''}:${c.proxy.password || ''}`
+        : '');
+      $('accounts').value = c.accountLines ?? (c.accounts?.length
+        ? c.accounts.map((a) => [a.email, a.password, a.cardNumber, a.cardMonth, a.cardYear, a.cvv].join(' ')).join('\n')
+        : '');
+      const scanOn = !!c.flags?.TIME_CHECK_PRODUCT_AVAILABLE;
+      document.querySelector(`input[name="scanMode"][value="${scanOn ? 'on' : 'off'}"]`).checked = true;
+      if (c.savedAt) showSaved(c.savedAt);
+    }
+
+    $('saveBtn').onclick = () => saveConfig(false);
+
+    $('runBtn').onclick = async () => {
+      $('runBtn').disabled = true;
+      logLines = [];
+      logLines._lastTs = 0;
+      await saveConfig(true);
+      const r = await fetch('/api/run', { method: 'POST' });
+      const j = await r.json();
+      if (!j.ok) {
+        appendLog({ ts: Date.now(), email: 'system', level: 'error', message: j.error || 'Start failed' });
+      } else {
+        appendLog({ ts: Date.now(), email: 'system', level: 'info', message: `Started ${j.tasks} account(s) — watch log for progress` });
+      }
+      setTimeout(() => { $('runBtn').disabled = false; }, 1500);
+      refreshOutputs();
+    };
+
+    $('stopBtn').onclick = async () => {
+      await fetch('/api/stop', { method: 'POST' });
+      appendLog({ ts: Date.now(), email: 'system', level: 'info', message: 'Stop requested' });
+    };
+
+    function connectWs() {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onmessage = (e) => {
+        appendLog(JSON.parse(e.data));
+        refreshOutputs();
+      };
+      ws.onclose = () => setTimeout(connectWs, 2000);
+    }
+
+    loadConfig().then(() => pollLogs());
+    connectWs();
+    setInterval(async () => {
+      await pollLogs();
+      refreshOutputs();
+    }, 1000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "productId": "100000001001391544",
+  "accounts": [
+    {
+      "email": "guides.pidgins2u@icloud.com",
+      "password": "De0nghira",
+      "cardNumber": "4323210038123128",
+      "cardMonth": "03",
+      "cardYear": "2031",
+      "cvv": "448"
+    }
+  ],
+  "scheduleTime": "rn",
+  "loginBeforeMinutes": 2,
+  "amount": 1,
+  "maxParallel": 100,
+  "saveCard": true,
+  "flags": {
+    "USE_OLD_CARD": false,
+    "HAVE_SAVE_CARD": true,
+    "NOT_ONLY_USE_PROXY_CONFIRM": false,
+    "IS_RUN_SLOW": false,
+    "TIME_CHECK_PRODUCT_AVAILABLE": false,
+    "TIME_WAIT": 0
+  },
+  "settings": {
+    "maxTab": 100,
+    "allowPaymentShop": true,
+    "version": "1.0.0-fast"
+  },
+  "productLink": "100000001001391544",
+  "proxy": {
+    "host": "74.81.32.177",
+    "port": 7700,
+    "username": "hipksz",
+    "password": "oxtemsuy"
+  },
+  "discordWebhookUrl": "https://discord.com/api/webhooks/1519576989747515535/or2nHpIwGz7v6gybwUwC2jlUYd0gWMWSBxCKlzM1qSIHV9Nqo1cEjZzA0vhuO32BAvQ3",
+  "fingerprint": ""
+}
